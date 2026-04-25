@@ -1,0 +1,16 @@
+.git
+node_modules
+.next
+.env
+.env.local
+.env.*.local
+coverage
+__tests__
+*.md
+.eslintrc.json
+jest.config.ts
+jest.setup.ts
+.dockerignore
+Dockerfile
+firebase-service-account.json
+serviceAccountKey.json
