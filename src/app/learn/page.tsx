@@ -5,7 +5,7 @@
  * Guided, Explorer, and Quiz modes with streaming chat.
  */
 
-import { useState, useRef, useEffect, type FormEvent } from 'react';
+import { useState, useRef, useEffect, Suspense, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useChat } from '@/hooks/useChat';
@@ -18,7 +18,10 @@ import styles from './learn.module.css';
  * Learn page with mode selector, chat interface, and AI interaction.
  * @returns The learn page JSX
  */
-export default function LearnPage() {
+/**
+ * Learn page content using search params.
+ */
+function LearnPageContent() {
   const searchParams = useSearchParams();
   const initialMode = (searchParams.get('mode') as LearningMode) ?? 'explorer';
 
@@ -103,154 +106,166 @@ export default function LearnPage() {
   const modeIcons: Record<LearningMode, string> = { guided: '📚', explorer: '🔍', quiz: '📝' };
 
   return (
+    <div className={styles.learnContainer}>
+      {/* Mode selector */}
+      <div className={styles.topBar}>
+        <div
+          className={styles.modeSelector}
+          role="radiogroup"
+          aria-label="Select learning mode"
+        >
+          {modes.map((m) => (
+            <button
+              key={m}
+              role="radio"
+              aria-checked={mode === m}
+              className={`${styles.modeBtn} ${mode === m ? styles.modeBtnActive : ''}`}
+              onClick={() => handleModeChange(m)}
+              id={`mode-${m}`}
+            >
+              <span aria-hidden="true">{modeIcons[m]}</span>
+              <span>{LEARNING_MODE_LABELS[m]}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Confusion indicator */}
+        {lastSignal && (
+          <div
+            className={styles.signalIndicator}
+            aria-label={`AI confidence: ${Math.round((1 - lastSignal.confusionScore) * 100)}%`}
+            title={`Confusion: ${Math.round(lastSignal.confusionScore * 100)}% | Mastery: ${lastSignal.topicMastery}%`}
+          >
+            <div
+              className={styles.signalBar}
+              style={{
+                width: `${lastSignal.topicMastery}%`,
+                background: lastSignal.confusionScore > 0.6
+                  ? 'var(--color-error)'
+                  : lastSignal.confusionScore > 0.3
+                  ? 'var(--color-warning)'
+                  : 'var(--color-success)',
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      {!isStarted ? (
+        /* Topic entry */
+        <div className={styles.startScreen}>
+          <div className={styles.startContent}>
+            <span className={styles.startIcon} aria-hidden="true">{modeIcons[mode]}</span>
+            <h1>{LEARNING_MODE_LABELS[mode]}</h1>
+            <p className={styles.modeDesc}>{LEARNING_MODE_DESCRIPTIONS[mode]}</p>
+            <form onSubmit={handleStartSession} className={styles.topicForm}>
+              <label htmlFor="topic-input" className={styles.topicLabel}>
+                What would you like to learn?
+              </label>
+              <input
+                id="topic-input"
+                type="text"
+                className="input"
+                placeholder="e.g., Quantum Computing, Machine Learning, React Hooks..."
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                required
+                aria-describedby="topic-hint"
+              />
+              <p id="topic-hint" className={styles.topicHint}>
+                Enter any topic you want to explore
+              </p>
+              <button type="submit" className="btn btn-primary btn-lg" id="start-session-btn">
+                Start Learning
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        /* Chat interface */
+        <div className={styles.chatArea}>
+          {/* Messages */}
+          <div
+            className={styles.messageList}
+            role="log"
+            aria-live="polite"
+            aria-label="Chat messages"
+          >
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`${styles.message} ${msg.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
+              >
+                <div className={styles.messageBubble}>
+                  <span className="sr-only">{msg.role === 'user' ? 'You' : 'MindPath'}:</span>
+                  <div className={styles.messageContent}>
+                    {msg.content || (
+                      <span className={styles.typingIndicator} aria-label="MindPath is thinking">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Error display */}
+          {error && (
+            <div className={styles.errorBanner} role="alert">
+              <span aria-hidden="true">⚠️</span> {error}
+            </div>
+          )}
+
+          {/* Input */}
+          <form onSubmit={handleSendMessage} className={styles.inputArea}>
+            <label htmlFor="chat-input" className="sr-only">
+              Type your message
+            </label>
+            <textarea
+              ref={inputRef}
+              id="chat-input"
+              className={styles.chatInput}
+              placeholder="Ask anything about the topic..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={1}
+              disabled={isStreaming}
+              aria-describedby="input-hint"
+            />
+            <p id="input-hint" className="sr-only">Press Enter to send, Shift+Enter for new line</p>
+            <button
+              type="submit"
+              className={`btn btn-primary btn-icon ${styles.sendBtn}`}
+              disabled={isStreaming || !inputValue.trim()}
+              id="send-message-btn"
+              aria-label="Send message"
+            >
+              {isStreaming ? '⏳' : '➤'}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Learn page wrapping content in Suspense for useSearchParams.
+ * @returns The learn page JSX
+ */
+export default function LearnPage() {
+  return (
     <div className="page-container">
       <Sidebar />
       <main id="main-content" className="main-content">
-        <div className={styles.learnContainer}>
-          {/* Mode selector */}
-          <div className={styles.topBar}>
-            <div
-              className={styles.modeSelector}
-              role="radiogroup"
-              aria-label="Select learning mode"
-            >
-              {modes.map((m) => (
-                <button
-                  key={m}
-                  role="radio"
-                  aria-checked={mode === m}
-                  className={`${styles.modeBtn} ${mode === m ? styles.modeBtnActive : ''}`}
-                  onClick={() => handleModeChange(m)}
-                  id={`mode-${m}`}
-                >
-                  <span aria-hidden="true">{modeIcons[m]}</span>
-                  <span>{LEARNING_MODE_LABELS[m]}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Confusion indicator */}
-            {lastSignal && (
-              <div
-                className={styles.signalIndicator}
-                aria-label={`AI confidence: ${Math.round((1 - lastSignal.confusionScore) * 100)}%`}
-                title={`Confusion: ${Math.round(lastSignal.confusionScore * 100)}% | Mastery: ${lastSignal.topicMastery}%`}
-              >
-                <div
-                  className={styles.signalBar}
-                  style={{
-                    width: `${lastSignal.topicMastery}%`,
-                    background: lastSignal.confusionScore > 0.6
-                      ? 'var(--color-error)'
-                      : lastSignal.confusionScore > 0.3
-                      ? 'var(--color-warning)'
-                      : 'var(--color-success)',
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {!isStarted ? (
-            /* Topic entry */
-            <div className={styles.startScreen}>
-              <div className={styles.startContent}>
-                <span className={styles.startIcon} aria-hidden="true">{modeIcons[mode]}</span>
-                <h1>{LEARNING_MODE_LABELS[mode]}</h1>
-                <p className={styles.modeDesc}>{LEARNING_MODE_DESCRIPTIONS[mode]}</p>
-                <form onSubmit={handleStartSession} className={styles.topicForm}>
-                  <label htmlFor="topic-input" className={styles.topicLabel}>
-                    What would you like to learn?
-                  </label>
-                  <input
-                    id="topic-input"
-                    type="text"
-                    className="input"
-                    placeholder="e.g., Quantum Computing, Machine Learning, React Hooks..."
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    required
-                    aria-describedby="topic-hint"
-                  />
-                  <p id="topic-hint" className={styles.topicHint}>
-                    Enter any topic you want to explore
-                  </p>
-                  <button type="submit" className="btn btn-primary btn-lg" id="start-session-btn">
-                    Start Learning
-                  </button>
-                </form>
-              </div>
-            </div>
-          ) : (
-            /* Chat interface */
-            <div className={styles.chatArea}>
-              {/* Messages */}
-              <div
-                className={styles.messageList}
-                role="log"
-                aria-live="polite"
-                aria-label="Chat messages"
-              >
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`${styles.message} ${msg.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
-                  >
-                    <div className={styles.messageBubble}>
-                      <span className="sr-only">{msg.role === 'user' ? 'You' : 'MindPath'}:</span>
-                      <div className={styles.messageContent}>
-                        {msg.content || (
-                          <span className={styles.typingIndicator} aria-label="MindPath is thinking">
-                            <span />
-                            <span />
-                            <span />
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Error display */}
-              {error && (
-                <div className={styles.errorBanner} role="alert">
-                  <span aria-hidden="true">⚠️</span> {error}
-                </div>
-              )}
-
-              {/* Input */}
-              <form onSubmit={handleSendMessage} className={styles.inputArea}>
-                <label htmlFor="chat-input" className="sr-only">
-                  Type your message
-                </label>
-                <textarea
-                  ref={inputRef}
-                  id="chat-input"
-                  className={styles.chatInput}
-                  placeholder="Ask anything about the topic..."
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  disabled={isStreaming}
-                  aria-describedby="input-hint"
-                />
-                <p id="input-hint" className="sr-only">Press Enter to send, Shift+Enter for new line</p>
-                <button
-                  type="submit"
-                  className={`btn btn-primary btn-icon ${styles.sendBtn}`}
-                  disabled={isStreaming || !inputValue.trim()}
-                  id="send-message-btn"
-                  aria-label="Send message"
-                >
-                  {isStreaming ? '⏳' : '➤'}
-                </button>
-              </form>
-            </div>
-          )}
-        </div>
+        <Suspense fallback={<div className="p-8 text-center text-[var(--color-text-secondary)]">Loading learning interface...</div>}>
+          <LearnPageContent />
+        </Suspense>
       </main>
     </div>
   );

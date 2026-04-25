@@ -7,6 +7,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { APP_NAME, NAV_LINKS } from '@/lib/constants';
 import styles from './Sidebar.module.css';
@@ -66,7 +67,7 @@ export function Sidebar() {
           <div className={styles.userSection}>
             <div className={styles.userInfo}>
               {user.photoURL ? (
-                <img
+                <Image
                   src={user.photoURL}
                   alt={`${user.displayName}'s avatar`}
                   className={styles.avatar}
